@@ -13,7 +13,7 @@ class Nocturne implements Plugin.PluginBase {
   site = 'https://noc.syosetu.com';
   // novel domain where the adult content lives
   novelDomain = 'https://novel18.syosetu.com';
-  version = '1.2.0';
+  version = '1.2.2';
   headers = {
     'User-Agent':
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -320,14 +320,21 @@ class Nocturne implements Plugin.PluginBase {
       }
     }
 
-    // If no chapters were found (single-page novel with no chapter list),
-    // add the novel page itself as a single chapter so the reader can fetch the content.
+    // Fallback for single-page novels (no chapter list at all)
+    // If the novel page itself contains body text, synthesize a Chapter 1.
     if (chapters.length === 0) {
-      chapters.push({
-        name: novel.name || '本文',
-        releaseTime: '',
-        path: novelPath,
-      });
+      const hasBody =
+        $('.p-novel__body .p-novel__text').length > 0 ||
+        $('#novel_honbun').length > 0;
+
+      if (hasBody) {
+        chapters.push({
+          name: 'Chapter 1',
+          releaseTime: '',
+          // IMPORTANT: point to the novel page itself
+          path: novelPath,
+        });
+      }
     }
 
     novel.chapters = chapters;
@@ -339,13 +346,19 @@ class Nocturne implements Plugin.PluginBase {
     const body = await result.text();
     const $ = loadCheerio(body, { decodeEntities: false });
 
-    const chapterTitle = $('.p-novel__title').html() || '';
+    const chapterTitle =
+      $('.p-novel__subtitle').html() ||
+      $('.p-novel__title').html() ||
+      'Chapter 1';
+
     const chapterContent =
-      $(
-        '.p-novel__body .p-novel__text:not([class*="p-novel__text--"])',
-      ).html() ||
+      $('.p-novel__body .p-novel__text').html() ||
       $('#novel_honbun').html() ||
       '';
+
+    if (!chapterContent) {
+      throw new Error('Failed to parse chapter content');
+    }
 
     return `<h1>${chapterTitle}</h1>${chapterContent}`;
   }
