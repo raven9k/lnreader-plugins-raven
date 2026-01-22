@@ -320,6 +320,16 @@ class Nocturne implements Plugin.PluginBase {
       }
     }
 
+    // If no chapters were found (single-page novel with no chapter list),
+    // add the novel page itself as a single chapter so the reader can fetch the content.
+    if (chapters.length === 0) {
+      chapters.push({
+        name: novel.name || '本文',
+        releaseTime: '',
+        path: novelPath,
+      });
+    }
+
     novel.chapters = chapters;
     return novel;
   }
