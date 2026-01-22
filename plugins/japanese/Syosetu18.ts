@@ -13,7 +13,7 @@ class Nocturne implements Plugin.PluginBase {
   site = 'https://noc.syosetu.com';
   // novel domain where the adult content lives
   novelDomain = 'https://novel18.syosetu.com';
-  version = '1.2.2';
+  version = '1.2.3';
   headers = {
     'User-Agent':
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -346,21 +346,33 @@ class Nocturne implements Plugin.PluginBase {
     const body = await result.text();
     const $ = loadCheerio(body, { decodeEntities: false });
 
-    const chapterTitle =
-      $('.p-novel__subtitle').html() ||
-      $('.p-novel__title').html() ||
+    const title =
+      $('.p-novel__subtitle').text().trim() ||
+      $('.p-novel__title').text().trim() ||
       'Chapter 1';
 
-    const chapterContent =
-      $('.p-novel__body .p-novel__text').html() ||
-      $('#novel_honbun').html() ||
-      '';
+    // Prefer real chapter body (本文)
+    let content = $('.p-novel__text--honbun').html();
 
-    if (!chapterContent) {
+    // Fallback: single-page novels or older layouts
+    if (!content) {
+      const blocks: string[] = [];
+      $('.p-novel__body .p-novel__text').each((_, el) => {
+        blocks.push($(el).html() || '');
+      });
+      content = blocks.join('<hr/>');
+    }
+
+    // Final fallback
+    if (!content) {
+      content = $('#novel_honbun').html() || '';
+    }
+
+    if (!content) {
       throw new Error('Failed to parse chapter content');
     }
 
-    return `<h1>${chapterTitle}</h1>${chapterContent}`;
+    return `<h1>${title}</h1>${content}`;
   }
 
   async searchNovels(
