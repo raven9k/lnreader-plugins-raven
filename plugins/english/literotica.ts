@@ -1,151 +1,184 @@
 import { load as loadCheerio } from 'cheerio';
 import { fetchApi } from '@libs/fetch';
-import { Plugin } from '@typings/plugin';
+import { Plugin } from '@/types/plugin';
 import { defaultCover } from '@libs/defaultCover';
 
-const baseUrl = 'https://www.literotica.com';
+/**
+ * Literotica plugin
+ *
+ * Site characteristics:
+ * - Stories may belong to a series (/series/se/ID)
+ * - Chapters can span multiple pages (?page=2,3...)
+ * - User can paste a series URL OR any chapter URL
+ */
+class Literotica implements Plugin.PluginBase {
+  id = 'literotica';
+  name = 'Literotica';
+  version = '1.0.0';
+  icon = 'src/en/literotica/icon.png';
+  site = 'https://www.literotica.com';
+  novelDomain = 'https://www.literotica.com';
 
-function absolute(url: string) {
-  if (url.startsWith('http')) return url;
-  return baseUrl + url;
-}
-
-async function loadAllChapterPages(firstPageUrl: string): Promise<string> {
-  let page = 1;
-  let content = '';
-  let hasNext = true;
-
-  while (hasNext) {
-    const url = page === 1 ? firstPageUrl : `${firstPageUrl}?page=${page}`;
-    const html = await fetchApi(url);
-    const $ = loadCheerio(html);
-
-    const story = $('.aa_ht, .b-story-body, .story-content').first();
-    if (!story.length) break;
-
-    story.find('script, iframe, ads, .adunit').remove();
-
-    story.find('p').each((_, el) => {
-      const t = $(el).text().trim();
-      if (t) content += t + '\n\n';
-    });
-
-    // Literotica shows pagination links
-    const nextExists = $('.pagination a')
-      .toArray()
-      .some(a => $(a).text().trim() === (page + 1).toString());
-
-    hasNext = nextExists;
-    page++;
-  }
-
-  return content.trim();
-}
-
-const plugin: Plugin = {
-  id: 'literotica',
-  name: 'Literotica',
-  icon: 'src/en/literotica/icon.png',
-  site: baseUrl,
-  version: '1.0.0',
-
-  matches: [
-    /^https?:\/\/www\.literotica\.com\/series\/se\/\d+/,
-    /^https?:\/\/www\.literotica\.com\/s\/.+/,
-  ],
-
-  async popularNovels() {
-    const html = await fetchApi(baseUrl);
-    const $ = loadCheerio(html);
+  async popularNovels(_pageNo: number): Promise<Plugin.NovelItem[]> {
+    const res = await fetchApi(this.site);
+    const body = await res.text();
+    const $ = loadCheerio(body);
 
     return $('.story-card, .b-story-card')
       .slice(0, 20)
       .map((_, el) => {
         const a = $(el).find('a').first();
         const title = a.text().trim();
-        const url = absolute(a.attr('href')!);
+        const href = a.attr('href');
+        if (!href) return null;
+
         return {
-          title,
-          url,
+          name: title,
+          path: href,
           cover: defaultCover(title),
         };
       })
-      .get();
-  },
+      .get()
+      .filter(Boolean) as Plugin.NovelItem[];
+  }
 
-  async searchNovels(query) {
-    const html = await fetchApi(
-      `${baseUrl}/search?q=${encodeURIComponent(query)}`,
+  async searchNovels(
+    searchTerm: string,
+    _pageNo: number,
+  ): Promise<Plugin.NovelItem[]> {
+    const res = await fetchApi(
+      `${this.site}/search?q=${encodeURIComponent(searchTerm)}`,
     );
-    const $ = loadCheerio(html);
+    const body = await res.text();
+    const $ = loadCheerio(body);
 
     return $('.search-result, .b-story-card')
       .map((_, el) => {
         const a = $(el).find('a').first();
         const title = a.text().trim();
-        const url = absolute(a.attr('href')!);
+        const href = a.attr('href');
+        if (!href) return null;
+
         return {
-          title,
-          url,
+          name: title,
+          path: href,
           cover: defaultCover(title),
         };
       })
-      .get();
-  },
+      .get()
+      .filter(Boolean) as Plugin.NovelItem[];
+  }
 
-  async load(url) {
-    // SERIES PAGE
-    if (url.includes('/series/')) {
-      const html = await fetchApi(url);
-      const $ = loadCheerio(html);
-
-      const title = $('h1').first().text().trim();
-      const author = $('.author a').first().text().trim() || 'Unknown';
-
-      const chapters = $('.series-list a')
-        .map((i, el) => ({
-          title: $(el).text().trim(),
-          url: absolute($(el).attr('href')!),
-        }))
-        .get();
-
-      return {
-        title,
-        author,
-        cover: defaultCover(title),
-        url,
-        chapters,
-      };
+  /**
+   * Parse novel (series OR single chapter)
+   */
+  async parseNovel(novelPath: string): Promise<Plugin.SourceNovel> {
+    if (novelPath.startsWith('http')) {
+      novelPath = novelPath.replace(this.novelDomain, '');
     }
 
-    // SINGLE CHAPTER URL → create virtual novel
-    const html = await fetchApi(url);
-    const $ = loadCheerio(html);
+    const res = await fetchApi(this.novelDomain + novelPath);
+    const body = await res.text();
+    const $ = loadCheerio(body);
 
-    const title = $('h1').first().text().trim();
-    const author = $('.author a').first().text().trim() || 'Unknown';
+    const title = $('h1').first().text().trim() || 'Literotica Story';
+    const author = $('.author a').first().text().trim();
 
-    return {
-      title,
-      author,
+    const novel: Plugin.SourceNovel = {
+      path: novelPath,
+      name: title,
+      author: author || '',
+      artist: '',
       cover: defaultCover(title),
-      url,
-      chapters: [{ title, url }],
+      status: 'Unknown',
+      summary: '',
+      genres: '',
+      chapters: [],
     };
-  },
 
-  async loadChapter(url) {
-    const html = await fetchApi(url);
-    const $ = loadCheerio(html);
+    // SERIES PAGE
+    if (novelPath.includes('/series/')) {
+      $('.series-list a').each((_, el) => {
+        const a = $(el);
+        const name = a.text().trim();
+        const href = a.attr('href');
+        if (!href || !name) return;
 
-    const title = $('h1').first().text().trim();
-    const content = await loadAllChapterPages(url);
+        novel.chapters.push({
+          name,
+          path: href,
+          releaseTime: '',
+        });
+      });
 
-    return {
-      title,
-      content,
-    };
-  },
-};
+      if (!novel.chapters.length) {
+        throw new Error('No chapters found in series');
+      }
 
-export default plugin;
+      return novel;
+    }
+
+    // SINGLE CHAPTER → virtual novel
+    novel.chapters.push({
+      name: title,
+      path: novelPath,
+      releaseTime: '',
+    });
+
+    return novel;
+  }
+
+  /**
+   * Parse chapter (handles multi-page chapters)
+   */
+  async parseChapter(chapterPath: string): Promise<string> {
+    if (chapterPath.startsWith('http')) {
+      chapterPath = chapterPath.replace(this.novelDomain, '');
+    }
+
+    let page = 1;
+    let content = '';
+    let title = 'Chapter';
+
+    while (true) {
+      const url = page === 1 ? chapterPath : `${chapterPath}?page=${page}`;
+
+      const res = await fetchApi(this.novelDomain + url);
+      const body = await res.text();
+      const $ = loadCheerio(body);
+
+      if (page === 1) {
+        title = $('h1').first().text().trim() || title;
+      }
+
+      const story = $('.aa_ht, .b-story-body, .story-content').first();
+      if (!story.length) break;
+
+      story.find('script, iframe, .adunit, .adsbygoogle').remove();
+
+      story.find('p').each((_, el) => {
+        content += `<p>${$(el).html()}</p>`;
+      });
+
+      const hasNext = $('.pagination a')
+        .toArray()
+        .some(a => $(a).text().trim() === String(page + 1));
+
+      if (!hasNext) break;
+      page++;
+    }
+
+    if (!content) {
+      throw new Error('Failed to parse chapter content');
+    }
+
+    return `<h1>${title}</h1>${content}`;
+  }
+
+  resolveUrl(path: string): string {
+    if (path.startsWith('http')) return path;
+    return this.novelDomain + path;
+  }
+}
+
+export default new Literotica();
