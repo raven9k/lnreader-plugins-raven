@@ -5,123 +5,145 @@ import { defaultCover } from '@libs/defaultCover';
 
 /**
  * Alphapolis Novel Plugin
- * Based strictly on the provided DOM structure.
+ * DOM-accurate, chapter-numbered, LNReader-safe
  */
 class Alphapolis implements Plugin.PluginBase {
   id = 'alphapolis';
   name = 'Alphapolis';
-  version = '1.0.0';
+  version = '1.2.0';
   icon = 'src/jp/alphapolis/icon.png';
   site = 'https://www.alphapolis.co.jp';
   novelDomain = 'https://www.alphapolis.co.jp';
 
-  // Alphapolis does not expose a simple popular list without auth
-  async popularNovels(_pageNo: number): Promise<Plugin.NovelItem[]> {
+  async popularNovels(): Promise<Plugin.NovelItem[]> {
     return [];
   }
 
-  // Search exists but is JS-heavy; omitted for stability
-  async searchNovels(
-    _searchTerm: string,
-    _pageNo: number,
-  ): Promise<Plugin.NovelItem[]> {
+  async searchNovels(): Promise<Plugin.NovelItem[]> {
     return [];
   }
 
   /**
-   * Accepts:
-   * - Novel TOC URL
-   * - Any episode URL
+   * Parse novel TOC
+   * Supports:
+   * - <h3> arc titles
+   * - .episodes .episode chapter entries
+   * - Sequential chapter numbering
    */
   async parseNovel(novelPath: string): Promise<Plugin.SourceNovel> {
     if (novelPath.startsWith('http')) {
       novelPath = novelPath.replace(this.novelDomain, '');
     }
 
-    // Normalize to TOC page
-    // /novel/{authorId}/{novelId}
+    // Normalize to /novel/{authorId}/{novelId}
     const parts = novelPath.split('/').filter(Boolean);
-    if (parts.length >= 3 && parts[0] === 'novel') {
+    if (parts[0] === 'novel' && parts.length >= 3) {
       novelPath = `/novel/${parts[1]}/${parts[2]}`;
     }
 
     const res = await fetchApi(this.novelDomain + novelPath);
-    const body = await res.text();
-    const $ = loadCheerio(body);
+    const html = await res.text();
+    const $ = loadCheerio(html);
 
     const novel: Plugin.SourceNovel = {
       path: novelPath,
-      name: $('.cover.novels .title').text().trim(),
-      author: $('.cover.novels .author a').first().text().trim(),
+      name: $('.cover .title, h1').first().text().trim(),
+      author: $('.cover .author a').first().text().trim(),
       artist: '',
       cover: defaultCover,
       status: 'Unknown',
-      summary: $('.cover.novels .abstract').html() || '',
-      genres: $('.content-tags .tag a')
+      summary: $('.abstract').html() || '',
+      genres: $('.tag a')
         .map((_, el) => $(el).text().trim())
         .get()
         .join(', '),
       chapters: [],
     };
 
-    // Episodes are inside .novels.table-of-contents .episodes
-    $('.novels.table-of-contents .episodes .episode a').each((_, el) => {
-      const a = $(el);
-      const title = a.find('.title').text().trim();
-      const href = a.attr('href');
-      const date = a.find('.open-date').text().trim();
+    let chapterIndex = 1;
+    let currentArc = '';
 
-      if (!href || !title) return;
+    // Walk through children of .episodes in order
+    $('.episodes')
+      .children()
+      .each((_, el) => {
+        const node = $(el);
 
-      novel.chapters.push({
-        name: title,
-        path: href,
-        releaseTime: date,
+        // Arc / Volume title
+        if (node.is('h3')) {
+          currentArc = node.text().trim();
+          return;
+        }
+
+        // Episode entry
+        if (node.hasClass('episode')) {
+          const a = node.find('a');
+          const rawTitle = a.find('.title').text().trim();
+          const href = a.attr('href');
+          const date = a.find('.open-date').text().trim();
+
+          if (!href || !rawTitle) return;
+
+          const finalTitle = currentArc
+            ? `Chapter ${chapterIndex} — ${currentArc}`
+            : `Chapter ${chapterIndex}`;
+
+          novel.chapters.push({
+            name: finalTitle,
+            path: href,
+            releaseTime: date,
+          });
+
+          chapterIndex++;
+        }
       });
-    });
 
-    if (novel.chapters.length === 0) {
-      throw new Error('No episodes found on Alphapolis page');
+    if (!novel.chapters.length) {
+      throw new Error('No chapters found on Alphapolis page');
     }
 
     return novel;
   }
 
+  /**
+   * Parse individual chapter
+   * Title: h2.episode-title
+   * Content: #novelBody.text
+   */
   async parseChapter(chapterPath: string): Promise<string> {
     if (chapterPath.startsWith('http')) {
       chapterPath = chapterPath.replace(this.novelDomain, '');
     }
 
     const res = await fetchApi(this.novelDomain + chapterPath);
-    const body = await res.text();
-    const $ = loadCheerio(body);
+    const html = await res.text();
+    const $ = loadCheerio(html);
 
     const title =
-      $('h1, h2').first().text().trim() ||
-      $('.episode-title').text().trim() ||
+      $('h2.episode-title').text().trim() ||
+      $('title').text().trim() ||
       'Chapter';
 
     let content = '';
 
-    // Alphapolis episode body
-    $('.episode-body p, .novel-body p, .content-main p').each((_, el) => {
+    $('#novelBody.text p').each((_, el) => {
       content += `<p>${$(el).html()}</p>`;
     });
 
+    // Fallback for chapters without <p>
     if (!content) {
-      content = $('.episode-body, .novel-body, .content-main').html() || '';
+      content = $('#novelBody.text').html() || '';
     }
 
     if (!content) {
-      throw new Error('Failed to parse chapter content');
+      throw new Error('Failed to parse Alphapolis chapter content');
     }
 
-    return `<h1>${title}</h1>${content}`;
+    return `<h2>${title}</h2>${content}`;
   }
 
   resolveUrl(path: string): string {
-    if (path.startsWith('http')) return path;
-    return this.novelDomain + path;
+    return path.startsWith('http') ? path : this.novelDomain + path;
   }
 }
 
