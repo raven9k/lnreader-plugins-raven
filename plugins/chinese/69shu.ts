@@ -12,7 +12,7 @@ class Shu69 implements Plugin.PluginBase {
       'Accept':
         'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
       'Accept-Language': 'en-US,us;q=0.5',
-      'Referer': 'https://www.69shu.xyz/', // Referer
+      'Referer': 'https://www.69shuba.com/', // Referer
       'DNT': '1', // Do Not Track
       'Upgrade-Insecure-Requests': '1', // Upgrade-Insecure-Requests
     },
@@ -21,8 +21,8 @@ class Shu69 implements Plugin.PluginBase {
   id = '69shu';
   name = '69书吧';
   icon = 'src/cn/69shu/icon.png';
-  site = 'https://www.69shu.xyz';
-  version = '0.2.2';
+  site = 'https://www.69shuba.com';
+  version = '0.2.5';
 
   async popularNovels(
     pageNo: number,

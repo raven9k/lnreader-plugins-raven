@@ -236,6 +236,10 @@ import p_233 from '@plugins/vietnamese/lightnovelvn';
 import p_234 from '@plugins/vietnamese/nettruyen';
 import p_235 from '@plugins/japanese/pixiv';
 import p_236 from '@plugins/english/LumoStories';
+import p_237 from '@plugins/japanese/NtrTuma';
+import p_238 from '@plugins/japanese/Alphapolis';
+import p_239 from '@plugins/english/indsex3';
+import p_240 from '@plugins/english/literotica';
 
 const PLUGINS: Plugin.PluginBase[] = [
   p_0,
@@ -475,5 +479,9 @@ const PLUGINS: Plugin.PluginBase[] = [
   p_234,
   p_235,
   p_236,
+  p_237,
+  p_238,
+  p_239,
+  p_240,
 ];
 export default PLUGINS;

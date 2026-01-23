@@ -6,25 +6,87 @@ import { defaultCover } from '@libs/defaultCover';
 class LumoStories implements Plugin.PluginBase {
   id = 'lumostories';
   name = 'Lumo Stories';
-  version = '1.0.1';
   icon = 'src/en/lumo/icon.png';
+  version = '1.2.0';
   site = 'https://lumostories.com';
   novelDomain = 'https://lumostories.com';
 
-  // LumoStories does not provide a public popular listing
+  // ================================
+  // Popular novels (homepage)
+  // ================================
   async popularNovels(_pageNo: number): Promise<Plugin.NovelItem[]> {
-    return [];
+    const res = await fetchApi(this.novelDomain + '/en/');
+    const body = await res.text();
+    const $ = loadCheerio(body);
+
+    const novels: Plugin.NovelItem[] = [];
+
+    $('.story-card a, .popular-story a').each((_, el) => {
+      const a = $(el);
+      const href = a.attr('href');
+      if (!href || !href.includes('/story/')) return;
+
+      const name = a.find('h3, .title').text().trim() || a.text().trim();
+
+      if (!name) return;
+
+      novels.push({
+        name,
+        path: href,
+        cover: defaultCover,
+      });
+    });
+
+    return novels;
   }
 
-  // LumoStories has no usable search endpoint
+  // ================================
+  // Search novels (real endpoint)
+  // ================================
   async searchNovels(
-    _searchTerm: string,
+    searchTerm: string,
     _pageNo: number,
   ): Promise<Plugin.NovelItem[]> {
-    return [];
+    const url =
+      this.novelDomain + '/en/search?keyword=' + encodeURIComponent(searchTerm);
+
+    const res = await fetchApi(url);
+    const body = await res.text();
+    const $ = loadCheerio(body);
+
+    const novels: Plugin.NovelItem[] = [];
+
+    $('.story-card a').each((_, el) => {
+      const a = $(el);
+      const href = a.attr('href');
+      if (!href || !href.includes('/story/')) return;
+
+      const name = a.find('h3, .title').text().trim() || a.text().trim();
+
+      if (!name) return;
+
+      novels.push({
+        name,
+        path: href,
+        cover: defaultCover,
+      });
+    });
+
+    return novels;
   }
 
+  // ================================
+  // Parse novel (paste full URL)
+  // ================================
   async parseNovel(novelPath: string): Promise<Plugin.SourceNovel> {
+    if (novelPath.startsWith('http')) {
+      novelPath = novelPath.replace(this.novelDomain, '');
+    }
+
+    if (!novelPath.endsWith('/chapters/')) {
+      novelPath = novelPath.replace(/\/?$/, '/') + 'chapters/';
+    }
+
     const res = await fetchApi(this.novelDomain + novelPath);
     const body = await res.text();
     const $ = loadCheerio(body);
@@ -41,10 +103,9 @@ class LumoStories implements Plugin.PluginBase {
       chapters: [],
     };
 
-    // Chapter list order is authoritative (read/{id} is random)
     $('.chapter-list a').each((_, el) => {
       const a = $(el);
-      const title = a.text().trim(); // e.g. "CHAPTER 358 - ..."
+      const title = a.text().trim();
       const href = a.attr('href');
       if (!href) return;
 
@@ -55,9 +116,16 @@ class LumoStories implements Plugin.PluginBase {
       });
     });
 
+    if (novel.chapters.length === 0) {
+      throw new Error('No chapters found on LumoStories page');
+    }
+
     return novel;
   }
 
+  // ================================
+  // Parse chapter
+  // ================================
   async parseChapter(chapterPath: string): Promise<string> {
     const res = await fetchApi(this.novelDomain + chapterPath);
     const body = await res.text();
@@ -81,6 +149,7 @@ class LumoStories implements Plugin.PluginBase {
   }
 
   resolveUrl(path: string): string {
+    if (path.startsWith('http')) return path;
     return this.novelDomain + path;
   }
 }
