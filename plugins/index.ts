@@ -235,6 +235,7 @@ import p_232 from '@plugins/vietnamese/LNHako';
 import p_233 from '@plugins/vietnamese/lightnovelvn';
 import p_234 from '@plugins/vietnamese/nettruyen';
 import p_235 from '@plugins/japanese/pixiv';
+import p_236 from '@plugins/english/LumoStories';
 
 const PLUGINS: Plugin.PluginBase[] = [
   p_0,
@@ -473,5 +474,6 @@ const PLUGINS: Plugin.PluginBase[] = [
   p_233,
   p_234,
   p_235,
+  p_236,
 ];
 export default PLUGINS;
